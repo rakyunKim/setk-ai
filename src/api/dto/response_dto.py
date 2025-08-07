@@ -10,6 +10,7 @@ from agent.utils.dto.types import DetailedRecord
 
 class DetailedRecordResponse(BaseModel):
     """API 응답용 세특 모델"""
+    student_id: int
     subject: str
     content: str
     generated_at: datetime
@@ -26,7 +27,6 @@ class ErrorResponse(BaseModel):
     """에러 응답 모델"""
     error_code: str
     message: str
-    status: str = "error"
     
     def to_json_response(self, status_code: int = 500) -> JSONResponse:
         """JSONResponse로 변환"""

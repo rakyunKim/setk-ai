@@ -29,6 +29,7 @@ class StudentInfo(TypedDict):
 
 class DetailedRecord(TypedDict):
     """세부능력 및 특기사항"""
+    student_id: int
     subject: str
     content: str
     generated_at: datetime

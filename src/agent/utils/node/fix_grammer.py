@@ -66,6 +66,7 @@ def fix_grammar_and_regenerate(state: StudentState, config: Optional[RunnableCon
     # DetailedRecord 업데이트 (version 증가)
     current_version = detailed_record.get('version', 1)
     updated_record = DetailedRecord(
+        student_id=detailed_record['student_id'],
         subject=detailed_record['subject'],
         content=fixed_content,
         generated_at=datetime.now(),

@@ -14,6 +14,8 @@ class TeacherInputRequest(BaseModel):
     subject_name: str
     midterm_score: int
     final_score: int
+    semester: int
+    academic_year: int
     additional_notes: Optional[str] = None
     
     def to_dict(self) -> TeacherInput:

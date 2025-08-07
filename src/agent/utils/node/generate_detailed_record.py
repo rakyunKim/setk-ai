@@ -52,6 +52,7 @@ def generate_detailed_record(state: StudentState, config: Optional[RunnableConfi
     
     # DetailedRecord 생성
     detailed_record = DetailedRecord(
+        student_id=teacher_input['student_number'],
         subject=teacher_input['subject_name'],
         content=generated_content,
         generated_at=datetime.now(),
