@@ -39,8 +39,8 @@ def generate_detailed_record(state: StudentState, config: Optional[RunnableConfi
     # 프롬프트 생성
     prompt = GENERATE_DETAILED_RECORD_PROMPT.format(
         name=teacher_input['name'],
-        student_number=teacher_input['student_number'],
-        subject_name=teacher_input['subject_name'],
+        student_number=teacher_input['student_id'],
+        subject_name=teacher_input['subject'],
         midterm_score=teacher_input['midterm_score'],
         final_score=teacher_input['final_score'],
         additional_notes=teacher_input.get('additional_notes', '없음')
@@ -52,8 +52,8 @@ def generate_detailed_record(state: StudentState, config: Optional[RunnableConfi
     
     # DetailedRecord 생성
     detailed_record = DetailedRecord(
-        student_id=teacher_input['student_number'],
-        subject=teacher_input['subject_name'],
+        student_id=teacher_input['student_id'],
+        subject=teacher_input['subject'],
         content=generated_content,
         generated_at=datetime.now(),
         version=1

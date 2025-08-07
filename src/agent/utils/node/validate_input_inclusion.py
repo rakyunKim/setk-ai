@@ -35,8 +35,8 @@ def validate_input_inclusion(state: StudentState, config: Optional[RunnableConfi
     # 검증 프롬프트 생성
     prompt = VALIDATE_INPUT_PROMPT.format(
         name=teacher_input['name'],
-        student_number=teacher_input['student_number'],
-        subject_name=teacher_input['subject_name'],
+        student_number=teacher_input['student_id'],
+        subject_name=teacher_input['subject'],
         midterm_score=teacher_input['midterm_score'],
         final_score=teacher_input['final_score'],
         additional_notes=teacher_input.get('additional_notes', '없음'),

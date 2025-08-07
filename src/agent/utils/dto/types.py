@@ -5,26 +5,13 @@ from typing_extensions import TypedDict
 
 
 class TeacherInput(TypedDict):
-    """선생님이 입력하는 정보"""
-    student_number: int
+    """선생님 입력 정보 (모든 필드 통합)"""
+    student_id: int
     name: str
-    subject_name: str
+    subject: str
     midterm_score: int  # 2학기 중간 수행평가 결과
     final_score: int  # 2학기 기말 수행평가 결과
     additional_notes: Optional[str]  # 봉사활동, 특이사항
-
-
-class AssessmentScore(TypedDict):
-    """수행평가 성적 정보"""
-    midterm_score: int  # 2학기 중간 수행평가
-    final_score: int  # 2학기 기말 수행평가 
-
-
-class StudentInfo(TypedDict):
-    """학생 기본 정보"""
-    student_number: int  # 번호
-    name: str  # 이름
-    subject_name: str  # 과목명
 
 
 class DetailedRecord(TypedDict):
