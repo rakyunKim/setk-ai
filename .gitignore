@@ -162,4 +162,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 uv.lock
-.langgraph_api/
+.DS_Store
+.langgraph_api
+check_generate_api_time_one.sh check_generate_api_time_ten.sh run_services.sh

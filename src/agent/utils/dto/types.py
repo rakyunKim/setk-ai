@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Optional
 
 from typing_extensions import TypedDict
@@ -19,7 +18,7 @@ class DetailedRecord(TypedDict):
     student_id: int
     subject: str
     content: str
-    generated_at: datetime
+    generated_at: str  # ISO format string으로 변경
     version: int
 
 

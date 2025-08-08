@@ -20,27 +20,8 @@ def _get_model(model_name: str):
     model = model.bind_tools(tools)
     return model
 
-# Define the function that determines whether to continue or not
-def should_continue(state):
-    messages = state["messages"]
-    last_message = messages[-1]
-    # If there are no tool calls, then we finish
-    if not last_message.tool_calls:
-        return "end"
-    # Otherwise if there is, we continue
-    else:
-        return "continue"
 
 
-# Define the function that calls the model
-def call_model(state, config):
-    messages = state["messages"]
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
-    model_name = config.get('configurable', {}).get("model_name", "openai")
-    model = _get_model(model_name)
-    response = model.invoke(messages)
-    # We return a list, because this will get added to the existing list
-    return {"messages": [response]}
 
 # Define the function to execute tools
 tool_node = ToolNode(tools)

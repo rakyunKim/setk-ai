@@ -84,21 +84,17 @@ def check_grammar_and_vocabulary(state: StudentState, config: Optional[RunnableC
             "suggestions": "자동 검증 실패로 기본값 사용"
         }
     
-    # 검증 결과를 state에 저장
-    state["grammar_check_status"] = "completed"
-    state["grammar_check_result"] = grammar_result
+    # 새로운 통합 grammar_result 구조로 저장 (validation_result와 동일 구조)
+    state["grammar_result"] = {
+        "status": "completed",
+        "is_valid": grammar_result.get("is_valid", False),
+        "issues": grammar_result.get("issues", []),  # 문법 오류만
+        "details": {}  # 필요시 추가 정보
+    }
     
-    # 문법 문제가 있으면 수정 필요 표시
-    if not grammar_result.get("is_valid", False):
-        state["needs_grammar_fix"] = True
-        state["grammar_issues"] = grammar_result.get("issues", [])
-    else:
-        state["needs_grammar_fix"] = False
-        
-    # 최종 승인 상태 설정
-    if not state.get("needs_regeneration", False) and not state.get("needs_grammar_fix", False):
-        state["final_approval"] = True
-    else:
-        state["final_approval"] = False
+    # 최종 승인 상태 설정 (validation과 grammar 모두 확인)
+    validation_valid = state.get("validation_result", {}).get("is_valid", False)
+    grammar_valid = state["grammar_result"]["is_valid"]
+    state["final_approval"] = validation_valid and grammar_valid
     
     return state

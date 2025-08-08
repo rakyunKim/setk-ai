@@ -35,8 +35,8 @@ def validate_input_inclusion(state: StudentState, config: Optional[RunnableConfi
     # 검증 프롬프트 생성
     prompt = VALIDATE_INPUT_PROMPT.format(
         name=teacher_input['name'],
-        student_number=teacher_input['student_id'],
-        subject_name=teacher_input['subject'],
+        student_id=teacher_input['student_id'],
+        subject=teacher_input['subject'],
         midterm_score=teacher_input['midterm_score'],
         final_score=teacher_input['final_score'],
         additional_notes=teacher_input.get('additional_notes', '없음'),
@@ -45,19 +45,15 @@ def validate_input_inclusion(state: StudentState, config: Optional[RunnableConfi
     
     # 검증 수행
     response = model.invoke(prompt)
-    validation_result = json.loads(response.content)
+    result = json.loads(response.content)
     
-    # 검증 결과를 state에 저장
-    state["validation_status"] = "completed"
-    state["validation_result"] = validation_result
-    
-    # 검증 실패 시 재생성 필요 표시
-    if not validation_result.get("is_valid", False):
-        state["needs_regeneration"] = True
-        state["regeneration_reason"] = "missing_info"
-        state["missing_items"] = validation_result.get("missing_items", [])
-    else:
-        state["needs_regeneration"] = False
+    # 새로운 통합 validation_result 구조로 저장
+    state["validation_result"] = {
+        "status": "completed",
+        "is_valid": result.get("is_valid", False),
+        "missing_items": result.get("missing_items", []),
+        "details": result.get("validation_details", {})
+    }
     
     return state
 

@@ -14,7 +14,9 @@ from agent.utils.state.state import StudentState
 # 조건부 라우팅 함수들
 def should_regenerate_for_missing_info(state: StudentState) -> str:
     """입력 정보 검증 후 라우팅 결정"""
-    if state.get("needs_regeneration", False):
+    # validation_result가 있고 is_valid가 False면 재생성 필요
+    validation_result = state.get("validation_result", {})
+    if not validation_result.get("is_valid", True):
         return "clear_for_regeneration"
     return "check_grammar"
 
@@ -24,21 +26,13 @@ def should_fix_grammar(state: StudentState) -> str:
     # 최종 승인되면 종료
     if state.get("final_approval", False):
         return "end"
-    # 문법 수정이 필요하면 수정
-    if state.get("needs_grammar_fix", False):
+    # grammar_result가 있고 is_valid가 False면 문법 수정 필요
+    grammar_result = state.get("grammar_result", {})
+    if not grammar_result.get("is_valid", True):
         return "fix_grammar"
     # 그 외의 경우도 종료
     return "end"
 
-
-def after_clearing(state: StudentState) -> str:
-    """정보 삭제 후 항상 generate로"""
-    return "generate"
-
-
-def after_grammar_fix(state: StudentState) -> str:
-    """문법 수정 후 다시 검증"""
-    return "check_grammar"
 
 
 # LangGraph Server용 워크플로우 정의

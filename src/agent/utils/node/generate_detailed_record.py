@@ -55,7 +55,7 @@ def generate_detailed_record(state: StudentState, config: Optional[RunnableConfi
         student_id=teacher_input['student_id'],
         subject=teacher_input['subject'],
         content=generated_content,
-        generated_at=datetime.now(),
+        generated_at=datetime.now().isoformat(),  # ISO format string으로 저장
         version=1
     )
     
