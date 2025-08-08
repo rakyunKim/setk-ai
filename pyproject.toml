@@ -16,6 +16,13 @@ dependencies = [
     "langchain-anthropic>=0.1.0",
     "langchain-community>=0.1.0",
     "tavily-python",
+    "faiss-cpu>=1.7.4",  # 벡터 DB용 (GPU 없는 환경)
+    "tiktoken>=0.5.1",  # OpenAI 토큰 카운팅
+    "fastapi>=0.100.0",  # API 서버
+    "uvicorn>=0.23.0",  # ASGI 서버
+    "httpx>=0.24.0",  # 비동기 HTTP 클라이언트
+    "pydantic>=2.0.0",  # 데이터 검증
+    "langchain-ollama"
 ]
 
 

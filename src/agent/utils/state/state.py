@@ -6,21 +6,30 @@ from agent.utils.dto.types import DetailedRecord, ErrorInfo, TeacherInput
 
 
 class StudentState(TypedDict):
-    """개별 학생의 세부능력 특기사항 생성을 위한 State (21개→9개 필드로 간소화)
+    """개별 학생의 세부능력 특기사항 생성을 위한 State
     """
-    # 핵심 데이터 (4개)
+    # 핵심 데이터
     teacher_input: TeacherInput
     detailed_record: Optional[DetailedRecord]
-    semester: int  # Literal["2학기"] 대신 int 사용
+    semester: int
     academic_year: int
     
-    # 처리 상태 (2개)
-    generation_status: Literal["pending", "in_progress", "completed", "failed"]
+    # RAG 관련 필드 (새로 추가)
+    retrieved_examples: Optional[List[str]]      # RAG로 검색된 예시들
+    custom_examples: Optional[List[str]]         # 사용자가 제공한 예시들
+    search_query: Optional[str]                  # 검색에 사용된 쿼리
+    search_metadata: Optional[Dict[str, Any]]    # 검색 메타데이터
+    
+    # 처리 상태
+    generation_status: Literal["pending", "in_progress", "completed", "failed", "fixed"]
     error_info: Optional[ErrorInfo]
     
-    # 통합된 결과들 (2개)
-    validation_result: Optional[Dict[str, Any]]  # 검증 결과 + 상태 + 재생성 정보 통합
-    grammar_result: Optional[Dict[str, Any]]     # 문법 결과 + 상태 + 수정 정보 통합
+    # 검증 결과 (통합)
+    validation_result: Optional[Dict[str, Any]]  # 입력 정보 + 품질 검증 통합
     
-    # 최종 승인 (1개)
+    # 수정 관련
+    fix_attempts: Optional[int]                  # 수정 시도 횟수
+    fix_examples: Optional[List[str]]            # Fix용 추가 예시
+    
+    # 최종 승인
     final_approval: Optional[bool]
