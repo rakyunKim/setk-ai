@@ -5,3 +5,4 @@
   - Approve the current plan
   - Modify the direction
   - Reject the proposed work completely
+- 항상 한국말로 대답해

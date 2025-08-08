@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.config.env_config import EnvConfig
 from src.utils.logger import setup_logger
+from src.api.exception.global_exception_handler import register_exception_handlers
 
 
 class AppConfig:
@@ -44,6 +45,9 @@ class AppConfig:
             allow_methods=self.config["cors_allow_methods"],
             allow_headers=self.config["cors_allow_headers"],
         )
+        
+        # Global Exception Handler 등록
+        register_exception_handlers(app)
         
         self.logger.info(f"FastAPI 앱 생성 완료 - 환경: {self.config['environment']}")
         self.logger.info(f"CORS origins: {self.config['cors_origins']}")

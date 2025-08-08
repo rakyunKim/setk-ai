@@ -9,12 +9,23 @@ langgraph up &
 LANGGRAPH_PID=$!
 
 # LangGraph Server가 준비될 때까지 대기
-echo "   LangGraph Server 초기화 대기 중..."
-sleep 5
+echo "   LangGraph Server 빌드 및 초기화 대기 중..."
+sleep 10  # 빌드 시간을 고려해서 더 길게 대기
 
-# 헬스 체크
+# 헬스 체크 (더 긴 간격으로 시도)
+echo "   LangGraph Server 상태 확인 중..."
+RETRY_COUNT=0
+MAX_RETRIES=30  # 최대 1분 대기
+
 until curl -s http://localhost:8123/health > /dev/null 2>&1; do
-    sleep 2
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+        echo "   ❌ LangGraph Server 시작 실패 (시간 초과)"
+        kill $LANGGRAPH_PID 2>/dev/null
+        exit 1
+    fi
+    echo "   대기 중... ($RETRY_COUNT/$MAX_RETRIES)"
+    sleep 3
 done
 echo "   ✅ LangGraph Server 준비 완료 (http://localhost:8123)"
 
@@ -26,8 +37,20 @@ python -m uvicorn src.api.proxy_api:app --host 0.0.0.0 --port 8000 &
 API_PID=$!
 
 # API Server가 준비될 때까지 대기
+echo "   API Server 초기화 대기 중..."
 sleep 3
+
+RETRY_COUNT=0
+MAX_RETRIES=15  # 최대 30초 대기
+
 until curl -s http://localhost:8000/health > /dev/null 2>&1; do
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+        echo "   ❌ API Server 시작 실패 (시간 초과)"
+        kill $LANGGRAPH_PID $API_PID 2>/dev/null
+        exit 1
+    fi
+    echo "   대기 중... ($RETRY_COUNT/$MAX_RETRIES)"
     sleep 2
 done
 echo "   ✅ API Server 준비 완료 (http://localhost:8000)"

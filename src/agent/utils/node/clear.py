@@ -9,8 +9,9 @@ from agent.utils.state.state import StudentState
 def clear_and_prepare_regeneration(state: StudentState, config: Optional[RunnableConfig] = None) -> StudentState:
     """검증 실패 시 기존 세특을 삭제하고 재생성을 위한 상태로 초기화하는 노드
     """
-    # 검증 결과 확인
-    needs_regeneration = state.get("needs_regeneration", False)
+    # validation_result 확인 - is_valid가 False면 재생성 필요
+    validation_result = state.get("validation_result", {})
+    needs_regeneration = not validation_result.get("is_valid", True)
     
     if not needs_regeneration:
         # 재생성이 필요없으면 그대로 반환

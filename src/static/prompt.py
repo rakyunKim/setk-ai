@@ -32,8 +32,8 @@ VALIDATE_INPUT_PROMPT = """
 
 선생님 입력 정보:
 - 학생 이름: {name}
-- 학생 번호: {student_number} 
-- 과목명: {subject_name}
+- 학생 번호: {student_id} 
+- 과목명: {subject}
 - 2학기 중간 수행평가: {midterm_score}점
 - 2학기 기말 수행평가: {final_score}점
 - 추가사항: {additional_notes}
