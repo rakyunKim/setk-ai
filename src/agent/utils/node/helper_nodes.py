@@ -18,7 +18,7 @@ def _get_model(model_name: str):
         model = model.bind_tools(tools)
     elif model_name == "ollama":
         model = ChatOllama(
-            model="llama3.2:3b",
+            model="gpt-oss:20b",
             temperature=0.5,
             base_url="http://localhost:11434"
         )
