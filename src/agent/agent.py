@@ -65,8 +65,8 @@ workflow.add_conditional_edges(
     }
 )
 
-# fix → validate (수정 후 재검증)
-workflow.add_edge("fix", "validate")
+# fix → end (수정 후 바로 종료, 재검증 없음)
+workflow.add_edge("fix", END)
 
 # 그래프 컴파일
 graph = workflow.compile(

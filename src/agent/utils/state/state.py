@@ -14,7 +14,7 @@ class StudentState(TypedDict):
     semester: int
     academic_year: int
     
-    # RAG 관련 필드 (새로 추가)
+    # RAG 관련 필드
     retrieved_examples: Optional[List[str]]      # RAG로 검색된 예시들
     custom_examples: Optional[List[str]]         # 사용자가 제공한 예시들
     search_query: Optional[str]                  # 검색에 사용된 쿼리
@@ -27,8 +27,6 @@ class StudentState(TypedDict):
     # 검증 결과 (통합)
     validation_result: Optional[Dict[str, Any]]  # 입력 정보 + 품질 검증 통합
     
-    # 수정 관련
-    fix_attempts: Optional[int]                  # 수정 시도 횟수
     fix_examples: Optional[List[str]]            # Fix용 추가 예시
     
     # 최종 승인

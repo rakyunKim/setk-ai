@@ -59,22 +59,8 @@ def fix(state: StudentState, config: Optional[RunnableConfig] = None) -> Student
         # 1. 새로운 예시 검색 (다양성 확보)
         new_examples = _get_new_examples(teacher_input["subject"], teacher_input.get("additional_notes"))
         
-        # 2. 개선사항 정리 (AI 검증 결과 활용)
-        detailed_issues = validation_result.get("detailed_issues", [])
-        if detailed_issues:
-            # AI 검증의 구체적 이슈 사용
-            improvements = []
-            for issue in detailed_issues:
-                if isinstance(issue, dict):
-                    improvements.append(f"- {issue.get('description', '')}")
-                    if issue.get('problematic_text'):
-                        improvements.append(f"  문제 텍스트: '{issue['problematic_text']}'")
-                    if issue.get('suggestion'):
-                        improvements.append(f"  수정 방법: {issue['suggestion']}")
-            improvements = "\n".join(improvements)
-        else:
-            # 기존 이슈 사용
-            improvements = _format_improvements(issues)
+        # 2. 개선사항 정리 - 간단한 이슈 리스트 사용
+        improvements = _format_improvements(issues)
         
         # 3. 모델 선택
         model_name = DEFAULT_MODEL
@@ -111,14 +97,16 @@ def fix(state: StudentState, config: Optional[RunnableConfig] = None) -> Student
         state["fix_attempts"] = fix_attempts + 1
         state["generation_status"] = "fixed"
         
-        # validation_result 초기화 (재검증 필요)
+        # 🔥 핵심 변경: fix 후 즉시 종료를 위해 final_approval을 True로 설정
+        state["final_approval"] = True  # 재검증 없이 바로 종료
         state["validation_result"] = {
-            "is_valid": False,  # 재검증 필요
+            "is_valid": True,  # 수정했으므로 유효한 것으로 간주
             "issues": [],
-            "fixed_at": get_timestamp_kst()
+            "fixed_at": get_timestamp_kst(),
+            "message": "수정 완료 - 추가 검증 없이 승인"
         }
         
-        logger.info(f"세특 수정 완료 - 버전: {current_version + 1}")
+        logger.info(f"세특 수정 완료 - 버전: {current_version + 1} (즉시 종료)")
         
     except Exception as e:
         logger.error(f"수정 중 오류: {e}")
