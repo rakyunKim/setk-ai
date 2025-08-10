@@ -4,8 +4,6 @@ from typing import List, Dict, Optional, Any
 from langchain.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
 from langchain.schema import Document
-import os
-import pickle
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -39,9 +37,7 @@ class VectorDBManager:
             # 통합 벡터스토어 (과목 구분 없이 하나로)
             self.vectorstore = None
             
-            # 캐시 디렉토리 설정
-            self.cache_dir = "src/agent/data/vector_cache"
-            os.makedirs(self.cache_dir, exist_ok=True)
+            # 캐시는 사용하지 않음 - 매번 새로 생성
             
             # 벡터 DB 초기화
             self.initialize_vectorstore()
@@ -50,25 +46,8 @@ class VectorDBManager:
             logger.info("VectorDBManager 초기화 완료")
     
     def initialize_vectorstore(self):
-        """벡터스토어 초기화
-        
-        캐시가 있으면 로드, 없으면 새로 생성
-        """
-        cache_path = os.path.join(self.cache_dir, "vectorstore.pkl")
-        
-        # 캐시된 벡터스토어가 있으면 로드
-        if os.path.exists(cache_path):
-            logger.info("캐시된 벡터스토어 로드 중...")
-            try:
-                with open(cache_path, "rb") as f:
-                    self.vectorstore = pickle.load(f)
-                logger.info("캐시된 벡터스토어 로드 완료")
-                return
-            except Exception as e:
-                logger.warning(f"캐시 로드 실패, 새로 생성: {e}")
-        
-        # 새로 생성
-        logger.info("새 벡터스토어 생성 중...")
+        """벡터스토어 초기화 - 매번 새로 생성"""
+        logger.info("벡터스토어 생성 중...")
         from .example_loader import ExampleLoader
         
         loader = ExampleLoader()
@@ -104,14 +83,6 @@ class VectorDBManager:
             )
             
             logger.info(f"{len(documents)}개 예시로 벡터스토어 생성 완료")
-            
-            # 캐시 저장
-            try:
-                with open(cache_path, "wb") as f:
-                    pickle.dump(self.vectorstore, f)
-                logger.info("벡터스토어 캐시 저장 완료")
-            except Exception as e:
-                logger.warning(f"캐시 저장 실패: {e}")
     
     def similarity_search(self, 
                          query: str, 
@@ -201,8 +172,7 @@ class VectorDBManager:
             )
             logger.info(f"{len(texts)}개 텍스트 추가 완료")
             
-            # 캐시 업데이트
-            self._update_cache()
+            # 캐시 사용하지 않음
             
         except Exception as e:
             logger.error(f"텍스트 추가 중 오류: {e}")
@@ -221,28 +191,14 @@ class VectorDBManager:
             self.vectorstore.add_documents(documents)
             logger.info(f"{len(documents)}개 문서 추가 완료")
             
-            # 캐시 업데이트
-            self._update_cache()
+            # 캐시 사용하지 않음
             
         except Exception as e:
             logger.error(f"문서 추가 중 오류: {e}")
     
-    def _update_cache(self):
-        """캐시 파일 업데이트"""
-        cache_path = os.path.join(self.cache_dir, "vectorstore.pkl")
-        try:
-            with open(cache_path, "wb") as f:
-                pickle.dump(self.vectorstore, f)
-            logger.debug("캐시 업데이트 완료")
-        except Exception as e:
-            logger.warning(f"캐시 업데이트 실패: {e}")
-    
     def clear_cache(self):
-        """캐시 초기화 (디버깅용)"""
-        cache_path = os.path.join(self.cache_dir, "vectorstore.pkl")
-        if os.path.exists(cache_path):
-            os.remove(cache_path)
-            logger.info("캐시 삭제 완료")
+        """캐시 사용하지 않으므로 빈 메서드"""
+        logger.info("캐시를 사용하지 않음 - 작업 없음")
 
 
 # 전역 싱글톤 인스턴스
