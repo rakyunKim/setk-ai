@@ -1,9 +1,9 @@
 """RAG 기반 세부능력 특기사항 생성 노드"""
 
-from datetime import datetime
 from typing import Optional
 from langchain_core.runnables import RunnableConfig
 from agent.utils.config.config import DEFAULT_MODEL
+from src.utils.timezone import get_timestamp_kst
 from agent.utils.dto.types import DetailedRecord
 from agent.utils.state.state import StudentState
 from agent.utils.node.helper_nodes import _get_model
@@ -57,7 +57,7 @@ def generate(state: StudentState, config: Optional[RunnableConfig] = None) -> St
             student_id=teacher_input['student_id'],
             subject=teacher_input['subject'],
             content=generated_content,
-            generated_at=datetime.now().isoformat(),
+            generated_at=get_timestamp_kst(),
             version=1
         )
         

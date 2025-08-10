@@ -1,8 +1,8 @@
 """Fix 노드 - 검증 실패 시 재검색 + 수정"""
 
-from datetime import datetime
 from typing import Optional
 from langchain_core.runnables import RunnableConfig
+from src.utils.timezone import get_timestamp_kst
 from agent.utils.config.config import DEFAULT_MODEL
 from agent.utils.dto.types import DetailedRecord
 from agent.utils.state.state import StudentState
@@ -102,7 +102,7 @@ def fix(state: StudentState, config: Optional[RunnableConfig] = None) -> Student
             student_id=teacher_input["student_id"],
             subject=teacher_input["subject"],
             content=improved_content,
-            generated_at=datetime.now().isoformat(),
+            generated_at=get_timestamp_kst(),
             version=current_version + 1
         )
         
@@ -115,7 +115,7 @@ def fix(state: StudentState, config: Optional[RunnableConfig] = None) -> Student
         state["validation_result"] = {
             "is_valid": False,  # 재검증 필요
             "issues": [],
-            "fixed_at": datetime.now().isoformat()
+            "fixed_at": get_timestamp_kst()
         }
         
         logger.info(f"세특 수정 완료 - 버전: {current_version + 1}")
