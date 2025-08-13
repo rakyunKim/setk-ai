@@ -45,16 +45,25 @@ async def generate_batch_detailed_records(requests: List[TeacherInputRequest]):
 @app.get("/health", tags=["시스템"])
 async def health_check():
     """헬스 체크 엔드포인트"""
-    # LangGraph Server 상태도 체크
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{LANGGRAPH_SERVER_URL}/health")
-            langgraph_status = "healthy" if response.status_code == 200 else "unhealthy"
-    except Exception:
-        langgraph_status = "unreachable"
+    # Direct Graph Mode인지 확인
+    import os
+    use_direct_graph = os.environ.get("USE_DIRECT_GRAPH", "true").lower() == "true"
+    
+    if not use_direct_graph:
+        # 기존: LangGraph Server 상태도 체크
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{LANGGRAPH_SERVER_URL}/health")
+                langgraph_status = "healthy" if response.status_code == 200 else "unhealthy"
+        except Exception:
+            langgraph_status = "unreachable"
+    else:
+        # 새로운: Direct Graph Mode
+        langgraph_status = "direct_mode (no server)"
     
     return {
         "status": "healthy",
+        "mode": "direct_graph" if use_direct_graph else "langgraph_server",
         "langgraph_server": langgraph_status,
         "timestamp": datetime.now().isoformat()
     }

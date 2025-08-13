@@ -6,7 +6,10 @@ import httpx
 from fastapi import HTTPException
 
 from src.api.dto.request_dto import TeacherInputRequest
-from src.api.services.langgraph_service import langgraph_service
+# 기존: LangGraph 서버 통신 서비스
+# from src.api.services.langgraph_service import langgraph_service
+# 새로운: 직접 그래프 실행 서비스
+from src.api.services.direct_graph_service import direct_graph_service
 from src.api.utils.response_util import ResponseUtil
 from src.api.config.app_config import logger
 
@@ -16,22 +19,30 @@ class GenerateService:
     
     def __init__(self):
         """서비스 초기화."""
-        self.langgraph_service = langgraph_service
+        # 기존: LangGraph 서버 사용
+        # self.langgraph_service = langgraph_service
+        
+        # 새로운: 직접 그래프 실행 (서버 없이)
+        self.graph_service = direct_graph_service
         self.logger = logger
     
     async def generate_single_student(self, request: TeacherInputRequest):
         """단일 학생 세부능력 특기사항 생성."""
         try:
-            # LangGraph 서비스 사용
-            detailed_record = await self.langgraph_service.process_single_student(request)
+            # 기존: LangGraph 서버 사용
+            # detailed_record = await self.langgraph_service.process_single_student(request)
+            
+            # 새로운: 직접 그래프 실행
+            detailed_record = await self.graph_service.process_single_student(request)
             
             # 성공 응답
             return ResponseUtil.success(detailed_record)
             
         except httpx.RequestError as e:
+            # 직접 실행에서는 네트워크 에러가 발생하지 않음
             raise HTTPException(
                 status_code=503,
-                detail=f"LangGraph Server 연결 실패: {str(e)}"
+                detail=f"서비스 연결 실패: {str(e)}"
             )
         except HTTPException:
             raise
@@ -44,13 +55,20 @@ class GenerateService:
     async def generate_batch_students(self, requests: List[TeacherInputRequest]):
         """여러 학생의 세부능력 특기사항을 동시에 생성."""
         try:
-            # 모든 학생을 병렬로 처리
+            # 기존: LangGraph 서버를 통한 처리
+            # tasks = []
+            # for student in requests:
+            #     task = self.langgraph_service.process_single_student(student)
+            #     tasks.append(task)
+            # results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # 새로운: 직접 그래프 실행으로 무제한 동시 처리
             tasks = []
             for student in requests:
-                task = self.langgraph_service.process_single_student(student)
+                task = self.graph_service.process_single_student(student)
                 tasks.append(task)
             
-            # 모든 작업 동시 실행
+            # 모든 작업 동시 실행 (서버 제한 없음)
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # 결과 처리
