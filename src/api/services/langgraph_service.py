@@ -6,6 +6,7 @@ import httpx
 from fastapi import HTTPException
 from src.api.dto.request_dto import TeacherInputRequest
 from src.api.config.app_config import logger, LANGGRAPH_SERVER_URL, ASSISTANT_ID
+from agent.utils.config.config import DEFAULT_MODEL
 
 
 class LangGraphService:
@@ -19,15 +20,65 @@ class LangGraphService:
     
     def __init__(self):
         """서비스 초기화."""
-        self.server_url = LANGGRAPH_SERVER_URL
+        # 여러 LangGraph 서버 엔드포인트 (로드 밸런싱용)
+        self.server_urls = [
+            "http://localhost:8123",
+            "http://localhost:8124",
+            "http://localhost:8125"
+        ]
+        
+        # 배치 할당 방식: 각 서버당 10개씩
+        self.batch_size = 10
+        self.current_server_index = 0
+        self.current_server_count = 0  # 현재 서버에 할당된 요청 수
+        
         self.assistant_id = ASSISTANT_ID
         self.logger = logger
+        
+        # 기본 서버 URL (환경변수에서 읽은 값, 폴백용)
+        self.fallback_server_url = LANGGRAPH_SERVER_URL
     
-    async def create_thread(self) -> str:
-        """LangGraph Thread 생성."""
+    def get_next_server_url(self) -> str:
+        """
+        배치 방식으로 다음 서버 URL 반환.
+        각 서버에 10개씩 할당한 후 다음 서버로 이동.
+        """
+        # 서버가 여러 개 있을 때만 로드 밸런싱
+        if len(self.server_urls) > 1:
+            url = self.server_urls[self.current_server_index]
+            
+            # 현재 서버에 할당된 요청 수 증가
+            self.current_server_count += 1
+            
+            # 디버깅 로그
+            self.logger.debug(
+                f"서버 할당: {url} (서버 {self.current_server_index + 1}/{len(self.server_urls)}, "
+                f"현재 서버 요청 수: {self.current_server_count}/{self.batch_size})"
+            )
+            
+            # 현재 서버가 배치 크기만큼 찼으면 다음 서버로
+            if self.current_server_count >= self.batch_size:
+                self.current_server_index = (self.current_server_index + 1) % len(self.server_urls)
+                self.current_server_count = 0
+                self.logger.info(f"다음 서버로 전환: 서버 {self.current_server_index + 1}")
+            
+            return url
+        else:
+            # 서버가 하나면 폴백 URL 사용
+            return self.fallback_server_url
+    
+    async def create_thread(self, server_url: str = None) -> tuple[str, str]:
+        """
+        LangGraph Thread 생성.
+        Returns: (thread_id, server_url) 튜플
+        """
+        # 서버 URL이 지정되지 않으면 자동 선택
+        if server_url is None:
+            server_url = self.get_next_server_url()
+            
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                f"{self.server_url}/threads",
+                f"{server_url}/threads",
                 json={
                     "metadata": {
                         "workflow": "세부능력특기사항생성",
@@ -43,33 +94,36 @@ class LangGraphService:
                 )
             
             data = response.json()
-            return data["thread_id"]
+            thread_id = data["thread_id"]
+            
+            # thread_id와 서버 URL을 함께 반환
+            return thread_id, server_url
     
-    async def run_workflow(self, thread_id: str, student_data: TeacherInputRequest) -> str:
+    async def run_workflow(self, thread_id: str, student_data: TeacherInputRequest, server_url: str) -> str:
         """워크플로우 실행 (Run 생성)."""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             # 디버깅: student_data 내용 확인
             teacher_dict = student_data.to_dict()
             self.logger.debug(f"[DEBUG] TeacherInputRequest.to_dict(): {teacher_dict}")
-            self.logger.debug(f"[DEBUG] student_number in teacher_dict: {teacher_dict.get('student_number', 'NOT_FOUND')}")
+            self.logger.debug(f"[DEBUG] student_number in teacher_dict: {teacher_dict.get('student_id', 'NOT_FOUND')}")
             
             payload = {
                 "assistant_id": self.assistant_id,
                 "input": {
                     "teacher_input": teacher_dict,
-                    "generation_status": "pending",
+                    "generation_status": "in_progress",
                     "semester": student_data.semester,
                     "academic_year": student_data.academic_year
                 },
                 "config": {
                     "configurable": {
-                        "model_name": "openai"
+                        "model_name": DEFAULT_MODEL  # 환경변수에서 읽도록 수정
                     }
                 }
             }
             
             response = await client.post(
-                f"{self.server_url}/threads/{thread_id}/runs",
+                f"{server_url}/threads/{thread_id}/runs",
                 json=payload
             )
 
@@ -82,15 +136,17 @@ class LangGraphService:
             data = response.json()
             return data["run_id"]
     
-    async def get_run_result(self, thread_id: str, run_id: str) -> Dict[str, Any]:
+    async def get_run_result(self, thread_id: str, run_id: str, server_url: str) -> Dict[str, Any]:
         """Run 결과 가져오기 (폴링)."""
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            max_attempts = 100  # 더 많은 시도 횟수 (간격이 짧아졌으므로)
+        # 개별 요청당 타임아웃 설정 (전체 세션은 제한 없음)
+        timeout = httpx.Timeout(10.0, connect=5.0, read=10.0, write=10.0, pool=None)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            max_attempts = 200  # 더 많은 폴링 허용
             
             for attempt in range(max_attempts):
                 # Run 상태 확인
                 response = await client.get(
-                    f"{self.server_url}/threads/{thread_id}/runs/{run_id}"
+                    f"{server_url}/threads/{thread_id}/runs/{run_id}"
                 )
                 
                 if response.status_code != 200:
@@ -109,46 +165,25 @@ class LangGraphService:
                 if status == "success":
                     # 실제 결과 가져오기 (state endpoint 사용)
                     result_response = await client.get(
-                        f"{self.server_url}/threads/{thread_id}/state"
+                        f"{server_url}/threads/{thread_id}/state"
                     )
                     
                     self.logger.debug(f"런 실행 결과 State 응답 코드: {result_response.status_code}")
+
+                    if result_response.status_code != 200:
+                        raise HTTPException(
+                            status_code=result_response.status_code,
+                            detail=f"결과 조회 실패: {result_response.text}"
+                        )
                     
-                    if result_response.status_code == 200:
-                        state_data = result_response.json()
-                        
-                        # values는 현재 state의 모든 필드를 담고 있는 dict
-                        if "values" in state_data:
-                            values = state_data["values"]
-                            
-                            if isinstance(values, dict):
-                                # values가 state 자체인 경우
-                                
-                                # detailed_record가 있는지 확인
-                                if "detailed_record" in values:
-                                    return values  # 전체 state 반환
-                                else:
-                                    self.logger.warning("values에 detailed_record 없음")
-                                    self.logger.debug(f"values 내용 일부: {str(values)[:500]}...")
-                                    return values
-                            elif isinstance(values, list) and len(values) > 0:
-                                # 리스트인 경우 마지막 값
-                                final_state = values[-1]
-                                self.logger.info(
-                                    f"최종 상태 (리스트): "
-                                    f"{final_state.keys() if isinstance(final_state, dict) else type(final_state)}"
-                                )
-                                return final_state
-                            else:
-                                self.logger.warning(f"values가 예상치 못한 타입: {type(values)}")
-                                raise HTTPException(status_code=500, detail="values가 예상치 못한 타입")
-                        else:
-                            self.logger.warning("values 키 없음, 전체 state 반환")
-                            raise HTTPException(status_code=500, detail="values 키 없음")
+                    state_data = result_response.json()
+                    values = state_data.get("values", {})
+
+                    if values:
+                        return values
                     else:
-                        self.logger.error(f"State 조회 실패: {result_response.text[:200]}")
-                        raise HTTPException(status_code=500, detail="워크플로우 결과 조회 실패")
-                        
+                        raise HTTPException(status_code=500, detail="성공은 했으나 결과 값이 없음")
+                    
                 elif status == "error":
                     error_msg = run_data.get("error", "워크플로우 실행 실패")
                     self.logger.error(f"워크플로우 에러: {error_msg}")
@@ -167,16 +202,16 @@ class LangGraphService:
     async def process_single_student(self, student: TeacherInputRequest) -> Dict[str, Any]:
         """단일 학생 처리 (Thread 생성 → Run 실행 → 결과 반환)."""
         try:
-            # 1. Thread 생성
-            thread_id = await self.create_thread()
-            self.logger.debug(f"Thread 생성됨: {thread_id}")
+            # 1. Thread 생성 (서버 URL도 함께 받음)
+            thread_id, server_url = await self.create_thread()
+            self.logger.debug(f"Thread 생성됨: {thread_id} (서버: {server_url})")
             
-            # 2. Run 실행
-            run_id = await self.run_workflow(thread_id, student)
-            self.logger.debug(f"Run 시작됨: {run_id}")
+            # 2. 같은 서버로 Run 실행
+            run_id = await self.run_workflow(thread_id, student, server_url)
+            self.logger.debug(f"Run 시작됨: {run_id} (서버: {server_url})")
             
-            # 3. 결과 가져오기
-            result = await self.get_run_result(thread_id, run_id)
+            # 3. 같은 서버에서 결과 가져오기
+            result = await self.get_run_result(thread_id, run_id, server_url)
             
             # 4. 결과에서 detailed_record 추출
             detailed_record = None
