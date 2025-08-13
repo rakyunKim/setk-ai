@@ -275,3 +275,4 @@ src/
 4. Run linting: `flake8`
 5. Run type checking: `mypy src/`
 - 코드를 변경하기 전에는 나한테 이전 사항과 달라진 사항을 보여주고 꼭 허락을 맡고 변경해
+- 문제를 해결할때 당장의 해결되는 해결책을 제시하지 말고 deep thought 방식으로 문제의 근본적인 원인을 찾아

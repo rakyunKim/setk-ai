@@ -69,8 +69,4 @@ workflow.add_conditional_edges(
 workflow.add_edge("fix", END)
 
 # 그래프 컴파일
-graph = workflow.compile(
-    name="RAG 기반 세부능력 특기사항 생성 워크플로우",
-    # 디버깅을 위한 설정
-    debug=False,
-)
+graph = workflow.compile(name="RAG 기반 세부능력 특기사항 생성 워크플로우",)
