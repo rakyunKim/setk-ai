@@ -13,15 +13,15 @@ class StudentState(TypedDict):
     detailed_record: Optional[DetailedRecord]
     semester: int
     academic_year: int
+    custom_examples: Optional[List[str]]         # 사용자가 제공한 예시들
     
     # RAG 관련 필드
     retrieved_examples: Optional[List[str]]      # RAG로 검색된 예시들
-    custom_examples: Optional[List[str]]         # 사용자가 제공한 예시들
     search_query: Optional[str]                  # 검색에 사용된 쿼리
     search_metadata: Optional[Dict[str, Any]]    # 검색 메타데이터
     
     # 처리 상태
-    generation_status: Literal["pending", "in_progress", "completed", "failed", "fixed"]
+    generation_status: Literal["in_progress", "completed", "failed"]
     error_info: Optional[ErrorInfo]
     
     # 검증 결과 (통합)
