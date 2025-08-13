@@ -1,8 +1,9 @@
 """Vector Database 관리자 - 싱글톤 패턴으로 구현"""
 
+import os
 from typing import List, Dict, Optional, Any
-from langchain.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS  # 새로운 import 경로
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.schema import Document
 from src.utils.logger import setup_logger
 
@@ -29,15 +30,26 @@ class VectorDBManager:
         if not self._initialized:
             logger.info("VectorDBManager 초기화 시작")
             
-            # OpenAI 임베딩 모델 초기화
-            self.embeddings = OpenAIEmbeddings(
-                model="text-embedding-3-small"  # 빠르고 저렴한 모델
+            # Google 임베딩 모델 초기화 (무료, 성능 우수)
+            # GEMINI_API_KEY는 이미 .env.local에 있음
+            api_key = os.getenv("GEMINI_API_KEY")
+            if not api_key:
+                raise ValueError("GEMINI_API_KEY가 설정되지 않았습니다.")
+            
+            self.embeddings = GoogleGenerativeAIEmbeddings(
+                model="models/text-embedding-004",  # 최신 구글 임베딩 모델
+                google_api_key=api_key
             )
             
             # 통합 벡터스토어 (과목 구분 없이 하나로)
             self.vectorstore = None
             
-            # 캐시는 사용하지 않음 - 매번 새로 생성
+            # FAISS 저장 경로 설정
+            self.db_path = "data/vector_db"
+            self.faiss_index_path = os.path.join(self.db_path, "faiss_index")
+            
+            # 디렉토리 생성
+            os.makedirs(self.db_path, exist_ok=True)
             
             # 벡터 DB 초기화
             self.initialize_vectorstore()
@@ -46,12 +58,29 @@ class VectorDBManager:
             logger.info("VectorDBManager 초기화 완료")
     
     def initialize_vectorstore(self):
-        """벡터스토어 초기화 - 매번 새로 생성"""
-        logger.info("벡터스토어 생성 중...")
+        """벡터스토어 초기화 - 기존 저장된 것 로드 또는 새로 생성"""
+        # 1. 기존 벡터스토어가 있는지 확인
+        if os.path.exists(self.faiss_index_path + ".faiss"):
+            try:
+                logger.info("기존 벡터스토어 로드 중...")
+                self.vectorstore = FAISS.load_local(
+                    self.faiss_index_path,
+                    self.embeddings,
+                    allow_dangerous_deserialization=True
+                )
+                logger.info("기존 벡터스토어 로드 완료")
+                return
+            except Exception as e:
+                logger.warning(f"기존 벡터스토어 로드 실패: {e}. 새로 생성합니다.")
+        
+        # 2. 새로 생성
+        logger.info("벡터스토어 새로 생성 중...")
         from .example_loader import ExampleLoader
         
         loader = ExampleLoader()
         examples = loader.load_all_examples()
+        
+        logger.info(f"총 {len(examples)}개 예시에 대해 임베딩 생성 시작...")
         
         if not examples:
             logger.warning("로드된 예시가 없음, 빈 벡터스토어 생성")
@@ -69,20 +98,57 @@ class VectorDBManager:
                     page_content=example["content"],
                     metadata={
                         "subject": example.get("subject", "general"),
-                        "keywords": example.get("keywords", []),
-                        "activity_type": example.get("activity_type", ""),
-                        "grade": example.get("grade", "")
+                        "school_level": example.get("school_level", "")
                     }
                 )
                 documents.append(doc)
             
-            # FAISS 벡터스토어 생성
-            self.vectorstore = FAISS.from_documents(
-                documents=documents,
-                embedding=self.embeddings
-            )
-            
-            logger.info(f"{len(documents)}개 예시로 벡터스토어 생성 완료")
+            # FAISS 벡터스토어 생성 (배치 처리)
+            logger.info("임베딩 생성 중... (배치 처리로 안전하게 처리)")
+            try:
+                # 배치 크기 설정 (50개씩)
+                batch_size = 50
+                total_batches = (len(documents) + batch_size - 1) // batch_size
+                
+                # 첫 번째 배치로 벡터스토어 초기화
+                first_batch = documents[:batch_size]
+                logger.info(f"첫 번째 배치 처리 중: {len(first_batch)}개")
+                
+                self.vectorstore = FAISS.from_documents(
+                    documents=first_batch,
+                    embedding=self.embeddings
+                )
+                logger.info(f"첫 번째 배치 완료 (1/{total_batches})")
+                
+                # 나머지 배치들 추가
+                for i in range(1, total_batches):
+                    start_idx = i * batch_size
+                    end_idx = min(start_idx + batch_size, len(documents))
+                    batch = documents[start_idx:end_idx]
+                    
+                    logger.info(f"배치 {i+1}/{total_batches} 처리 중: {len(batch)}개")
+                    self.vectorstore.add_documents(batch)
+                    logger.info(f"배치 {i+1}/{total_batches} 완료")
+                
+                logger.info(f"전체 {len(documents)}개 예시로 벡터스토어 생성 완료")
+                
+            except Exception as e:
+                logger.error(f"벡터스토어 생성 실패: {e}")
+                # 실패 시 빈 벡터스토어 생성
+                logger.info("빈 벡터스토어 생성으로 대체...")
+                self.vectorstore = FAISS.from_texts(
+                    texts=["초기화"],
+                    embedding=self.embeddings,
+                    metadatas=[{"type": "init"}]
+                )
+                logger.info("빈 벡터스토어로 대체 생성 완료")
+        
+        # 3. 디스크에 저장
+        try:
+            self.vectorstore.save_local(self.faiss_index_path)
+            logger.info(f"벡터스토어 저장 완료: {self.faiss_index_path}")
+        except Exception as e:
+            logger.error(f"벡터스토어 저장 실패: {e}")
     
     def similarity_search(self, 
                          query: str, 
@@ -105,100 +171,39 @@ class VectorDBManager:
         try:
             if filter:
                 # 필터가 있으면 필터링된 검색
+                # fetch_k를 크게 설정해서 충분한 후보를 가져온 후 필터링
+                logger.debug(f"필터 검색 - filter: {filter}, query: {query}, k: {k}")
                 results = self.vectorstore.similarity_search(
                     query=query,
                     k=k,
-                    filter=filter
+                    filter=filter,
+                    fetch_k=200  # 더 많은 후보를 가져온 후 필터링
                 )
+                logger.debug(f"필터 검색 완료: '{query[:50]}...' -> {len(results)}개 결과")
             else:
                 # 일반 검색
                 results = self.vectorstore.similarity_search(
                     query=query,
                     k=k
                 )
+                logger.debug(f"일반 검색 완료: '{query[:50]}...' -> {len(results)}개 결과")
             
-            logger.debug(f"검색 완료: '{query[:50]}...' -> {len(results)}개 결과")
             return results
             
         except Exception as e:
             logger.error(f"검색 중 오류: {e}")
             return []
-    
-    def similarity_search_with_score(self,
-                                    query: str,
-                                    k: int = 3) -> List[tuple[Document, float]]:
-        """유사도 점수와 함께 검색
-        
-        Args:
-            query: 검색 쿼리
-            k: 반환할 결과 개수
-            
-        Returns:
-            (Document, 점수) 튜플 리스트
-        """
-        if not self.vectorstore:
-            logger.error("벡터스토어가 초기화되지 않음")
-            return []
-        
-        try:
-            results = self.vectorstore.similarity_search_with_score(
-                query=query,
-                k=k
-            )
-            logger.debug(f"점수 포함 검색 완료: {len(results)}개 결과")
-            return results
-            
-        except Exception as e:
-            logger.error(f"검색 중 오류: {e}")
-            return []
-    
-    def add_texts(self, 
-                  texts: List[str], 
-                  metadatas: Optional[List[Dict]] = None):
-        """런타임에 새로운 텍스트 추가
-        
-        Args:
-            texts: 추가할 텍스트 리스트
-            metadatas: 메타데이터 리스트
-        """
-        if not self.vectorstore:
-            logger.error("벡터스토어가 초기화되지 않음")
-            return
-        
-        try:
-            self.vectorstore.add_texts(
-                texts=texts,
-                metadatas=metadatas or [{}] * len(texts)
-            )
-            logger.info(f"{len(texts)}개 텍스트 추가 완료")
-            
-            # 캐시 사용하지 않음
-            
-        except Exception as e:
-            logger.error(f"텍스트 추가 중 오류: {e}")
-    
-    def add_documents(self, documents: List[Document]):
-        """런타임에 새로운 문서 추가
-        
-        Args:
-            documents: Document 객체 리스트
-        """
-        if not self.vectorstore:
-            logger.error("벡터스토어가 초기화되지 않음")
-            return
-        
-        try:
-            self.vectorstore.add_documents(documents)
-            logger.info(f"{len(documents)}개 문서 추가 완료")
-            
-            # 캐시 사용하지 않음
-            
-        except Exception as e:
-            logger.error(f"문서 추가 중 오류: {e}")
     
     def clear_cache(self):
-        """캐시 사용하지 않으므로 빈 메서드"""
-        logger.info("캐시를 사용하지 않음 - 작업 없음")
+        """저장된 벡터스토어 삭제"""
+        try:
+            import shutil
+            if os.path.exists(self.db_path):
+                shutil.rmtree(self.db_path)
+            else:
+                logger.info("삭제할 캐시가 없음")
+        except Exception as e:
+            logger.error(f"캐시 삭제 중 오류: {e}")
 
 
 # 전역 싱글톤 인스턴스

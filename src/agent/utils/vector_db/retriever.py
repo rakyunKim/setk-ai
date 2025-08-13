@@ -27,92 +27,84 @@ class ExampleRetriever:
         self.db_manager = vector_db
     
     def search_examples(self, 
-                       subject: str, 
+                       subject: str,
+                       school_level: Optional[str] = None,
                        additional_notes: Optional[str] = None,
-                       custom_examples: Optional[List[str]] = None,
+                       achievement_standards: Optional[str] = None,
                        k: int = 3) -> List[str]:
-        """과목과 특이사항을 조합하여 예시 검색
+        """과목과 학교급, 특이사항, 성취기준을 조합하여 예시 검색
         
         Args:
             subject: 과목명
+            school_level: 학교급 (초등학생, 중학생, 고등학생)
             additional_notes: 특이사항/추가 활동
-            custom_examples: 사용자가 제공한 커스텀 예시
+            achievement_standards: 과목 성취기준
             k: 반환할 예시 개수
             
         Returns:
             검색된 예시 텍스트 리스트
         """
-        # 1. 사용자가 제공한 예시가 있으면 우선 추가
-        if custom_examples:
-            self._add_custom_examples(custom_examples, subject)
+        # 1. 검색 쿼리 구성 (achievement_standards, school_level 포함)
+        search_query = self._build_search_query(subject, additional_notes, achievement_standards, school_level)
         
-        # 2. 검색 쿼리 구성
-        search_query = self._build_search_query(subject, additional_notes)
+        # 2. 벡터 DB에서 검색 수행 (school_level 전달)
+        results = self._perform_search(search_query, subject, school_level, k)
         
-        # 3. 검색 수행
-        results = self._perform_search(search_query, subject, k)
-        
-        # 4. 결과 텍스트 추출
+        # 3. 결과 텍스트 추출
         example_texts = [doc.page_content for doc in results]
         
-        logger.info(f"검색 완료: '{subject}' -> {len(example_texts)}개 예시")
+        logger.info(f"검색 완료: '{subject}' -> 벡터DB {len(results)}개")
         
         return example_texts
     
-    def search_examples_with_score(self,
-                                   subject: str,
-                                   additional_notes: Optional[str] = None,
-                                   k: int = 3) -> List[Tuple[str, float]]:
-        """점수와 함께 예시 검색
-        
-        Args:
-            subject: 과목명
-            additional_notes: 특이사항
-            k: 반환할 예시 개수
-            
-        Returns:
-            (예시 텍스트, 유사도 점수) 튜플 리스트
-        """
-        # 검색 쿼리 구성
-        search_query = self._build_search_query(subject, additional_notes)
-        
-        # 점수와 함께 검색
-        results = self.db_manager.similarity_search_with_score(search_query, k)
-        
-        # 결과 포맷팅
-        examples_with_scores = [
-            (doc.page_content, score) 
-            for doc, score in results
-        ]
-        
-        return examples_with_scores
-    
-    def _build_search_query(self, subject: str, additional_notes: Optional[str]) -> str:
+    def _build_search_query(self, subject: str, 
+                           additional_notes: Optional[str] = None,
+                           achievement_standards: Optional[str] = None,
+                           school_level: Optional[str] = None) -> str:
         """검색 쿼리 구성
         
         Args:
             subject: 과목명
             additional_notes: 특이사항
+            achievement_standards: 성취기준
+            school_level: 학교급 (초등학생, 중학생, 고등학생)
             
         Returns:
             구성된 검색 쿼리
         """
         query_parts = []
         
-        # 1. 일반 과목인 경우 과목명 포함
+        # 1. 학교급이 있으면 가장 먼저 포함 (중요한 필터링 기준)
+        if school_level and school_level not in ["없음", ".", "-", ""]:
+            query_parts.append(f"학교급: {school_level}")
+        
+        # 2. 일반 과목인 경우 과목명 포함
         if self._is_common_subject(subject):
             query_parts.append(f"과목: {subject}")
         
-        # 2. 특이사항이 있고 유의미한 경우 포함
+        # 3. 특이사항이 있고 유의미한 경우 포함
         if additional_notes and additional_notes not in ["없음", ".", "-", ""]:
-            # 특이사항이 더 중요하므로 앞에 배치
-            query_parts.insert(0, f"활동: {additional_notes}")
+            # 특이사항이 중요하므로 앞쪽에 배치
+            if school_level:  # 학교급이 있으면 두 번째로
+                query_parts.insert(1, f"추가사항: {additional_notes}")
+            else:  # 학교급이 없으면 첫 번째로
+                query_parts.insert(0, f"추가사항: {additional_notes}")
         
-        # 3. 쿼리가 비어있으면 과목명만이라도 사용
+        # 4. 성취기준이 있으면 주요 키워드 추출하여 포함
+        if achievement_standards and achievement_standards.strip():
+            # 성취기준에서 핵심 키워드 추출 (첫 줄이나 주요 개념)
+            standards_lines = [s.strip() for s in achievement_standards.split('\n') if s.strip()]
+            if standards_lines:
+                # 첫 번째 성취기준이나 짧은 키워드 추가
+                key_concepts = standards_lines[0][:50] if standards_lines else ""
+                if key_concepts:
+                    query_parts.append(f"학습내용: {key_concepts}")
+        
+        # 5. 쿼리가 비어있으면 과목명만이라도 사용
         if not query_parts and subject:
             query_parts.append(subject)
         
-        # 4. 그래도 비어있으면 기본 쿼리
+        # 6. 그래도 비어있으면 기본 쿼리
         if not query_parts:
             query_parts.append("학생 세부능력 특기사항")
         
@@ -136,21 +128,33 @@ class ExampleRetriever:
                 return True
         return False
     
-    def _perform_search(self, query: str, subject: str, k: int) -> List[Document]:
+    def _perform_search(self, query: str, subject: str, school_level: Optional[str], k: int) -> List[Document]:
         """실제 검색 수행
         
         Args:
             query: 검색 쿼리
             subject: 과목명 (필터링용)
+            school_level: 학교급 (필터링용)
             k: 결과 개수
             
         Returns:
             검색 결과 Document 리스트
         """
-        # 일반 과목인 경우 메타데이터 필터 적용
+        # 필터 구성
+        filter_dict = {}
+        
+        # 일반 과목인 경우 과목 필터 추가
         if self._is_common_subject(subject):
-            # 먼저 과목 필터로 검색
-            filter_dict = {"subject": subject}
+            filter_dict["subject"] = subject
+        
+        # school_level이 있으면 필터에 추가
+        if school_level:
+            filter_dict["school_level"] = school_level
+            logger.debug(f"school_level 필터 적용: {school_level}")
+        
+        # 필터가 있으면 필터 검색, 없으면 일반 검색
+        if filter_dict:
+            # 필터로 검색
             results = self.db_manager.similarity_search(
                 query=query,
                 k=k,
@@ -176,33 +180,6 @@ class ExampleRetriever:
             )
         
         return results
-    
-    def _add_custom_examples(self, examples: List[str], subject: str):
-        """사용자 제공 예시를 벡터 DB에 추가
-        
-        Args:
-            examples: 예시 텍스트 리스트
-            subject: 과목명
-        """
-        try:
-            metadatas = [
-                {
-                    "subject": subject,
-                    "source": "user_provided",
-                    "runtime": True
-                }
-                for _ in examples
-            ]
-            
-            self.db_manager.add_texts(
-                texts=examples,
-                metadatas=metadatas
-            )
-            
-            logger.info(f"사용자 제공 예시 {len(examples)}개 추가")
-            
-        except Exception as e:
-            logger.error(f"커스텀 예시 추가 실패: {e}")
     
     def get_diverse_examples(self, subject: str, k: int = 3) -> List[str]:
         """다양한 예시 획득 (중복 방지)
