@@ -172,3 +172,12 @@ CLAUDE.md.backup-2025-08-09T11-53-26
 SuperClaude/
 CLAUDE.md
 examples.json
+
+# Project specific files
+data/
+run_direct.sh
+run_gunicorn.sh
+run_script.sh
+src/agent/static/
+src/api/services/direct_graph_service.py
+test_sh/
