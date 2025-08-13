@@ -1,10 +1,10 @@
 """통합 검증 노드 - 입력 정보 포함 + 품질 검증"""
 
 # 검증 프롬프트 구성
-from src.static.prompt import AI_VALIDATE_PROMPT
+from agent.static.prompt import AI_VALIDATE_PROMPT
 from typing import Optional, List
 from langchain_core.runnables import RunnableConfig
-from agent.utils.config.config import DEFAULT_MODEL
+from agent.utils.config.config import get_model_name, log_token_usage
 from agent.utils.state.state import StudentState
 from agent.utils.node.helper_nodes import _get_model
 from src.utils.logger import setup_logger
@@ -33,34 +33,26 @@ def validate(state: StudentState, config: Optional[RunnableConfig] = None) -> St
         logger.info(f"AI 검증 시작 - 학생: {teacher_input['name']}")
         
         # AI 모델 초기화 - validate는 tools 없이 순수 텍스트 응답만 필요
-        model_name = DEFAULT_MODEL
-        if config and hasattr(config, 'configurable'):
-            model_name = config.configurable.get("model_name", DEFAULT_MODEL)
-        
-        # validate 전용 모델 생성 (tools binding 없이)
-        from langchain_openai import ChatOpenAI
-        if model_name == "openai":
-            model = ChatOpenAI(temperature=0.5, model_name="gpt-4o-mini")
-        else:
-            model = _get_model(model_name)
+        model_name = get_model_name(config)
+        model = _get_model(model_name)
         
         
         validation_prompt = AI_VALIDATE_PROMPT.format(
-            name=teacher_input.get("name", ""),
-            midterm_score=teacher_input.get("midterm_score", ""),
-            final_score=teacher_input.get("final_score", ""),
             additional_notes=teacher_input.get("additional_notes", "없음"),
-            content=content
+            content=content,
+            achievement_standards=teacher_input.get("achievement_standards", ""),
+            midterm_score=teacher_input.get("midterm_score", "없음"),
+            final_score=teacher_input.get("final_score", "없음"),
         )
         
-        # AI 검증 실행
-        logger.debug(f"Using model: {model_name}")
-        logger.debug(f"Prompt length: {len(validation_prompt)}")
         try:
             response = model.invoke(validation_prompt)
-            logger.debug(f"Model invocation successful")
+            
+            # 토큰 사용량 로깅
+            log_token_usage(response, logger, "validate")
+            
         except Exception as model_error:
-            logger.error(f"Model invocation failed: {model_error}")
+            logger.error(f"검증 노드 모델 호출 실패: {model_error}")
             raise
         
         ai_response = response.content
@@ -110,8 +102,45 @@ def validate(state: StudentState, config: Optional[RunnableConfig] = None) -> St
         state["final_approval"] = is_valid
         
         logger.info(f"AI 검증 완료 - 유효: {is_valid}, 이슈: {len(issue_list)}개")
-        
-        if issue_list:
+
+        # 검증 실패 시 상세 정보 로깅 (파일 저장용)
+        if not is_valid and issue_list:
+            logger.error("=" * 100)
+            logger.error("🚫 검증 실패 케이스")
+            logger.error("=" * 100)
+            
+            # 1. 기본 정보
+            logger.error(f"📋 학생명: {teacher_input.get('name', 'Unknown')}")
+            logger.error(f"📋 과목: {teacher_input.get('subject', 'Unknown')}")
+            logger.error(f"📋 학교급: {teacher_input.get('school_level', 'Unknown')}")
+            
+            logger.error("")
+            logger.error("-" * 60)
+            logger.error("📝 교사 제공 정보")
+            logger.error("-" * 60)
+            logger.error(f"🎯 추가사항: {teacher_input.get('additional_notes', '없음')}")
+            logger.error(f"🎯 성취기준: {teacher_input.get('achievement_standards', '없음')}")
+            logger.error(f"🎯 중간 점수: {teacher_input.get('midterm_score', '없음')}")
+            logger.error(f"🎯 기말 점수: {teacher_input.get('final_score', '없음')}")
+            
+            logger.error("")
+            logger.error("-" * 60)
+            logger.error("📄 생성된 원본 세특")
+            logger.error("-" * 60)
+            logger.error(content)
+            
+            logger.error("")
+            logger.error("-" * 60)
+            logger.error("❌ 검증 실패 사유")
+            logger.error("-" * 60)
+            logger.error(f"📊 요약: {result.get('summary', '없음')}")
+            logger.error("")
+            logger.error("📋 발견된 이슈:")
+            for i, issue in enumerate(issue_list, 1):
+                logger.error(f"  {i}. {issue}")
+            
+            logger.error("=" * 100)
+        elif issue_list:
             logger.debug(f"발견된 이슈: {issue_list[:3]}")
         
     except Exception as e:

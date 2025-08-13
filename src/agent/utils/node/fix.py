@@ -3,12 +3,12 @@
 from typing import Optional
 from langchain_core.runnables import RunnableConfig
 from src.utils.timezone import get_timestamp_kst
-from agent.utils.config.config import DEFAULT_MODEL
+from agent.utils.config.config import get_model_name, log_token_usage
 from agent.utils.dto.types import DetailedRecord
 from agent.utils.state.state import StudentState
 from agent.utils.node.helper_nodes import _get_model
 from agent.utils.vector_db.retriever import example_retriever
-from src.static.prompt import FIX_WITH_IMPROVEMENTS_PROMPT
+from agent.static.prompt import FIX_WITH_IMPROVEMENTS_PROMPT
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -32,14 +32,11 @@ def fix(state: StudentState, config: Optional[RunnableConfig] = None) -> Student
         teacher_input = state["teacher_input"]
         current_content = state["detailed_record"]["content"]
         validation_result = state.get("validation_result", {})
-        issues = validation_result.get("issues", [])
         
         # 수정이 필요없으면 그대로 반환
         if validation_result.get("is_valid", True):
             logger.info("검증 통과 - 수정 불필요")
             return state
-        
-        logger.info(f"세특 수정 시작 - 이슈: {len(issues)}개")
         
         # 수정 시도 횟수 체크 및 증가
         fix_attempts = state.get("fix_attempts", 0)
@@ -59,13 +56,11 @@ def fix(state: StudentState, config: Optional[RunnableConfig] = None) -> Student
         # 1. 새로운 예시 검색 (다양성 확보)
         new_examples = _get_new_examples(teacher_input["subject"], teacher_input.get("additional_notes"))
         
-        # 2. 개선사항 정리 - 간단한 이슈 리스트 사용
-        improvements = _format_improvements(issues)
+        # 2. 개선사항 정리 - validation_result 전체를 전달
+        improvements = _format_improvements(validation_result)
         
         # 3. 모델 선택
-        model_name = DEFAULT_MODEL
-        if config and hasattr(config, 'configurable'):
-            model_name = config.configurable.get("model_name", DEFAULT_MODEL)
+        model_name = get_model_name(config)
         model = _get_model(model_name)
         
         # 4. 수정 프롬프트 구성
@@ -73,15 +68,19 @@ def fix(state: StudentState, config: Optional[RunnableConfig] = None) -> Student
             current_content=current_content,
             improvements=improvements,
             examples=new_examples,
-            teacher_input=teacher_input
+            teacher_input=teacher_input,
+            achievement_standards=teacher_input.get("achievement_standards", "")
         )
         
         # 5. 개선된 세특 생성
         response = model.invoke(fix_prompt)
         improved_content = response.content if hasattr(response, 'content') else str(response)
         
-        logger.debug(f"개선된 세특 길이: {len(improved_content)}자")
-        
+        # 토큰 사용량 로깅
+        log_token_usage(response, logger, "fix")
+
+        logger.debug(f"개선된 세특 내용: {improved_content}")
+
         # 6. DetailedRecord 업데이트
         current_version = state["detailed_record"].get("version", 1)
         updated_record = DetailedRecord(
@@ -95,7 +94,7 @@ def fix(state: StudentState, config: Optional[RunnableConfig] = None) -> Student
         # 7. 상태 업데이트
         state["detailed_record"] = updated_record
         state["fix_attempts"] = fix_attempts + 1
-        state["generation_status"] = "fixed"
+        state["generation_status"] = "completed"
         
         # 🔥 핵심 변경: fix 후 즉시 종료를 위해 final_approval을 True로 설정
         state["final_approval"] = True  # 재검증 없이 바로 종료
@@ -107,6 +106,24 @@ def fix(state: StudentState, config: Optional[RunnableConfig] = None) -> Student
         }
         
         logger.info(f"세특 수정 완료 - 버전: {current_version + 1} (즉시 종료)")
+        
+        # 수정 결과 상세 로깅 (파일 저장용)
+        logger.error("")
+        logger.error("=" * 100)
+        logger.error("✅ 수정 완료 결과")
+        logger.error("=" * 100)
+        
+        # 기본 정보
+        logger.error(f"📋 학생명: {teacher_input.get('name', 'Unknown')}")
+        logger.error(f"📋 과목: {teacher_input.get('subject', 'Unknown')}")
+        
+        logger.error("")
+        logger.error("-" * 60)
+        logger.error("🔧 수정된 세특 내용")
+        logger.error("-" * 60)
+        logger.error(improved_content)
+        
+        logger.error("=" * 100)
         
     except Exception as e:
         logger.error(f"수정 중 오류: {e}")
@@ -150,44 +167,37 @@ def _get_new_examples(subject: str, additional_notes: Optional[str]) -> list:
         return []
 
 
-def _format_improvements(issues: list) -> str:
-    """개선사항을 읽기 쉬운 형태로 포맷팅
+def _format_improvements(validation_result: dict) -> str:
+    """검증 결과를 개선사항으로 포맷팅
     
     Args:
-        issues: 검증에서 발견된 이슈 리스트
+        validation_result: validate 노드에서 전달된 검증 결과
         
     Returns:
         포맷팅된 개선사항 문자열
     """
+    issues = validation_result.get("issues", [])
+    summary = validation_result.get("summary", "")
+    
     if not issues:
         return "전반적인 품질 개선 필요"
     
-    # 이슈를 카테고리별로 분류
-    info_issues = []
-    quality_issues = []
-    other_issues = []
-    
-    for issue in issues:
-        if "누락" in issue or "점수" in issue:
-            info_issues.append(issue)
-        elif "활동" in issue or "표현" in issue:
-            quality_issues.append(issue)
-        else:
-            other_issues.append(issue)
-    
     improvements = []
     
-    if info_issues:
-        improvements.append("### 필수 정보 포함")
-        improvements.extend([f"- {issue}" for issue in info_issues])
+    # 요약이 있으면 먼저 표시
+    if summary:
+        improvements.append(f"## 검증 요약: {summary}\n")
     
-    if quality_issues:
-        improvements.append("\n### 품질 개선")
-        improvements.extend([f"- {issue}" for issue in quality_issues])
+    # 발견된 이슈들을 목록으로 표시
+    improvements.append("## 수정이 필요한 사항들:")
+    for i, issue in enumerate(issues, 1):
+        improvements.append(f"{i}. {issue}")
     
-    if other_issues:
-        improvements.append("\n### 기타 수정사항")
-        improvements.extend([f"- {issue}" for issue in other_issues])
+    # 구체적인 수정 지침 추가
+    improvements.append("\n## 수정 방향:")
+    improvements.append("- 위에서 지적된 모든 문제를 반드시 수정해주세요")
+    improvements.append("- 특히 음슴체와 학생 이름 관련 문제는 최우선으로 수정해주세요")
+    improvements.append("- 문장을 자연스럽게 연결하여 매끄러운 흐름을 만들어주세요")
     
     return "\n".join(improvements)
 
@@ -195,7 +205,8 @@ def _format_improvements(issues: list) -> str:
 def _build_fix_prompt(current_content: str, 
                       improvements: str, 
                       examples: list,
-                      teacher_input: dict) -> str:
+                      teacher_input: dict,
+                      achievement_standards: str = "") -> str:
     """Fix 프롬프트 구성
     
     Args:
@@ -203,6 +214,7 @@ def _build_fix_prompt(current_content: str,
         improvements: 개선사항
         examples: 참고 예시
         teacher_input: 교사 입력 정보
+        achievement_standards: 성취기준
         
     Returns:
         완성된 프롬프트
@@ -215,49 +227,8 @@ def _build_fix_prompt(current_content: str,
         current_content=current_content,
         improvements=improvements,
         examples=examples_text,
-        name=teacher_input["name"],
-        subject=teacher_input["subject"],
-        midterm_score=teacher_input["midterm_score"],
-        final_score=teacher_input["final_score"],
-        additional_notes=teacher_input.get("additional_notes", "없음")
+        additional_notes=teacher_input.get("additional_notes", "없음"),
+        achievement_standards=achievement_standards
     )
     
     return prompt
-
-
-def simple_fix(state: StudentState, config: Optional[RunnableConfig] = None) -> StudentState:
-    """간단한 수정 (정보 누락만 처리)
-    
-    필수 정보가 누락된 경우만 빠르게 수정
-    
-    Args:
-        state: 학생 상태
-        config: 런타임 설정
-        
-    Returns:
-        수정된 상태
-    """
-    teacher_input = state["teacher_input"]
-    current_content = state["detailed_record"]["content"]
-    
-    # 누락된 정보 추가
-    if teacher_input["name"] not in current_content:
-        current_content = f"{teacher_input['name']} 학생은 " + current_content
-    
-    if str(teacher_input["midterm_score"]) not in current_content:
-        current_content = current_content.replace(
-            "수행평가", 
-            f"중간 수행평가 {teacher_input['midterm_score']}점, 기말 수행평가"
-        )
-    
-    if str(teacher_input["final_score"]) not in current_content:
-        current_content = current_content.replace(
-            "기말 수행평가", 
-            f"기말 수행평가 {teacher_input['final_score']}점"
-        )
-    
-    # 업데이트
-    state["detailed_record"]["content"] = current_content
-    state["detailed_record"]["version"] = state["detailed_record"].get("version", 1) + 1
-    
-    return state

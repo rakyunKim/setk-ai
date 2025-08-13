@@ -27,18 +27,23 @@ def prepare_examples(state: StudentState, config: Optional[RunnableConfig] = Non
         # 1. 필요한 정보 추출
         teacher_input = state["teacher_input"]
         subject = teacher_input["subject"]
+        school_level = teacher_input.get("school_level", "고등학생")  # 기본값: 고등학생
         additional_notes = teacher_input.get("additional_notes", "")
+        achievement_standards = teacher_input.get("achievement_standards", "")
         
         # 2. 사용자가 제공한 커스텀 예시 (있는 경우)
         custom_examples = state.get("custom_examples", None)
         
-        logger.info(f"예시 검색 시작 - 과목: {subject}")
+        logger.info(f"예시 검색 시작 - 과목: {subject}, 학교급: {school_level}")
+        if achievement_standards:
+            logger.debug(f"성취기준 포함: {achievement_standards[:100]}...")
         
-        # 3. RAG 검색 수행
+        # 3. RAG 검색 수행 (school_level 추가)
         retrieved_examples = example_retriever.search_examples(
             subject=subject,
+            school_level=school_level,
             additional_notes=additional_notes,
-            custom_examples=custom_examples,
+            achievement_standards=achievement_standards,
             k=3  # 기본 3개 검색
         )
         
@@ -49,6 +54,8 @@ def prepare_examples(state: StudentState, config: Optional[RunnableConfig] = Non
         search_query = f"과목: {subject}"
         if additional_notes and additional_notes not in ["없음", ".", "-", ""]:
             search_query += f", 활동: {additional_notes}"
+        if achievement_standards and achievement_standards not in ["없음", ".", "-", ""]:
+            search_query += f", 성취기준: {achievement_standards}"
         state["search_query"] = search_query
         
         # 6. 검색 통계 저장
@@ -56,14 +63,11 @@ def prepare_examples(state: StudentState, config: Optional[RunnableConfig] = Non
             "num_examples": len(retrieved_examples),
             "subject": subject,
             "has_additional_notes": bool(additional_notes and additional_notes != "없음"),
-            "has_custom_examples": bool(custom_examples)
         }
-        
-        logger.info(f"예시 검색 완료 - {len(retrieved_examples)}개 예시 검색됨")
         
         # 디버그: 검색된 예시 일부 출력
         if retrieved_examples:
-            logger.debug(f"첫 번째 예시 (50자): {retrieved_examples[0][:50]}...")
+            logger.debug(f"검색된 예시 전체: {retrieved_examples}")
         
     except Exception as e:
         logger.error(f"예시 검색 중 오류 발생: {e}")
@@ -76,7 +80,6 @@ def prepare_examples(state: StudentState, config: Optional[RunnableConfig] = Non
             "error": str(e)
         }
         
-        # 에러 정보 저장
         if "error_info" not in state:
             state["error_info"] = {}
         state["error_info"]["prepare_error"] = str(e)
