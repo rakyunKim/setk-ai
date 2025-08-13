@@ -171,3 +171,4 @@ check_generate_api_time_one.sh check_generate_api_time_ten.sh run_services.sh
 CLAUDE.md.backup-2025-08-09T11-53-26
 SuperClaude/
 CLAUDE.md
+examples.json
